@@ -1,36 +1,33 @@
-import json
 from channels.generic.websocket import AsyncWebsocketConsumer
-from .models import DriverLocation
+import json
 
 
 class LocationConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        await self.channel_layer.group_add("location_updates", self.channel_name)
         await self.accept()
+        await self.channel_layer.group_add("user_group", self.channel_name)
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard("location_updates", self.channel_name)
+        await self.channel_layer.group_discard("user_group", self.channel_name)
 
     async def receive(self, text_data):
-        data = json.loads(text_data)
-        latitude, longitude = data["latitude"], data["longitude"]
+        try:
+            data = json.loads(text_data)
+            if data.get("mode") == "driver":
+                await self.channel_layer.group_send(
+                    "user_group",
+                    {
+                        "type": "location_update",
+                        "latitude": data["latitude"],
+                        "longitude": data["longitude"],
+                    },
+                )
+        except Exception as e:
+            print("Error en receive:", e)  # Debug
 
-        # Guardar la ubicación en la base de datos
-        DriverLocation.objects.create(latitude=latitude, longitude=longitude)
-
-        # Enviar la ubicación a todos los clientes conectados
-        await self.channel_layer.group_send(
-            "location_updates",
-            {
-                "type": "send_location",
-                "latitude": latitude,
-                "longitude": longitude,
-            },
-        )
-
-    async def send_location(self, event):
+    async def location_update(self, event):
         await self.send(
-            text_data=json.dumps(
+            json.dumps(
                 {
                     "latitude": event["latitude"],
                     "longitude": event["longitude"],
